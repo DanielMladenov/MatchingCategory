@@ -1,0 +1,692 @@
+Option GlobalVariables
+Dim MDM_Main,MDM_second ,Metadata1 , Metadata2 , List_Main,TableDoc_Main,CaseData1,TableDoc_Second,CaseData2,NewMDD_Name , NewMDD2_Name , MDM_Temp, Temp_Path,con
+dim   List_Grid,D3_Grid,i,letter,number,Prefix,PostFix,cat_list
+Dim ele_main,ele_second,cat, cate2,Quest_main,quest_second , ele ,Counter,prefix_CatName,ReplaceList,OriginalCatList,ID_VarName , Sym, NewCaseData_Name
+Dim CounterVarsOriginal,ccMainLabel,ccSecondLabel , cat_main, cat_second,Flag_LabMatch, quest,ques,vailableCatName, PrefixNumberType,tempcat,NewCaseData2_Name,FSO
+Dim ListOfCategoriesWhichWereAdded
+
+'Master data
+Metadata1 = "data\0_Kinshasa_B2C_coded_data.mdd"
+CaseData1 = "data\0_Kinshasa_B2C_coded_data" 
+
+'Current data
+Metadata2 = "data\0_Botswana_B2C_coded_data.mdd"
+'Must be the full path - "V:\...."
+CaseData2 = "V:\France\Scripts\Matching_Categories\Data\0_Botswana_B2C_coded_data.ddf"
+
+'ID variable in the Current data set
+ID_VarName = "ID" 
+'Symbol to be removed in the comparioson of the labels
+Sym="-, ,&,',\,/,`"
+
+'Setign Name for the Temp MMDD
+Temp_Path = "data\TempMDD.mdd"
+
+'Name of the Updated main MDD
+NewMDD_Name = "data\NewMDD.mdd"
+NewCaseData_Name = "data\NewMDD.ddf"
+'Name of the Updated "Second" MDD
+NewMDD2_Name = "data\NewMDD2.mdd"
+'Must be the full path - "V:\...."
+NewCaseData2_Name = "V:\France\Scripts\Matching_Categories\Data\NewMDD2.ddf"
+
+'Q14ter_Coded
+'List of the questions which need to be matched.
+List_Main = "Q14ter_coded,Q1c_Coded"
+List_Grid = ""
+D3_Grid = ""
+
+
+' ================================================================ SETING the prefix Number if needed ===================================
+' 1 - Concatenate  /  2-sum the numbers / 3 - For Mitio only
+PrefixNumberType = 1
+'Prefix for the new category names - if needed - if it's set to 0 it will not add anything
+prefix_CatName = 400
+'=======================================================================================================================================
+
+
+Set FSO = CreateObject("Scripting.FileSystemObject")
+
+FSO.CopyFile(CaseData2,NewCaseData2_Name,TRUE)
+FSO.CopyFile(CaseData1 + ".ddf",NewCaseData_Name,TRUE)
+'FSO.CopyFile("V:\France\Scripts\Matching_Categories\Data\0_Botswana_B2C_coded_data.ddf","V:\France\Scripts\Matching_Categories\Data\NewMDD2.ddf",TRUE)
+
+
+Set MDM_Main = CreateObject("MDM.Document")
+Set MDM_second = CreateObject("MDM.Document")
+Set MDM_Temp = CreateObject("MDM.Document")
+
+Set TableDoc_Main = CreateObject("TOM.Document")
+Set TableDoc_Second = CreateObject("TOM.Document")	
+
+
+
+'=============================================================='Opening Original Data
+MDM_Main.open(Metadata1)
+MDM_second.open(Metadata2)
+
+
+MDM_Main.Save(NewMDD_Name)
+MDM_Second.Save(NewMDD2_Name)
+
+MDM_Main.Close()
+MDM_Second.Close()
+
+
+'============================================ Cleaning the {} from the second data ===========================================
+
+If len(List_Main)>1 Then
+	For each ques in Split(List_Main,",")
+		Cleaning_EmptyAnswers_Sub(ques,NewMDD2_Name,NewCaseData2_Name)
+	Next
+End if 
+
+'
+'
+'If len(List_Main)>1 Then
+'	For each ques in Split(List_Main,",")
+'		Cleaning_EmptyAnswers_Sub(ques,Metadata2,CaseData2)
+'	Next
+'End if 
+
+
+'===================================================================
+
+
+
+MDM_Main.open(Metadata1)
+MDM_second.open(Metadata2)
+'=========================================== Main Script ===============================================
+
+If len(List_Main)>1 Then
+	For each quest in Split(List_Main,",")
+		'# preparing the category name for the new category that should be included
+		CounterVarsOriginal = MDM_Main.Fields[quest].categories.count + 1
+		
+		'# Finding the prefix and the postFix for the categorical list for the current question
+		cat_list = CategorieNames_FlatQues(quest)
+		prefix = Prefix_Function(cat_list)
+		
+		If Prefix = "The prefix is not the same into the categories !!!" Then
+			Debug.Log("The prefix is not the same into the categories for quetion "+quest+"")
+			exit
+		End if 
+		
+		PostFix = PostFix_Function(cat_list,prefix)
+		If PostFix = "There is no postfix" Then 
+			PostFix = ""
+			Debug.Log("For categorical list of question "+quest+", there is no postfix")
+		ElseIf PostFix = "The postfix check was not passed" Then
+			Debug.log("There is different postfix for question "+quest+" in the categorical list")
+			Exit
+		End if 
+		
+		'Adding the processed question into the list
+		ListOfCategoriesWhichWereAdded = ListOfCategoriesWhichWereAdded + quest
+		
+		
+		
+		For each cat_second in MDM_second.Fields[quest].categories
+		
+			' Reseting the matching flag to determen if the label exist into the main list
+			Flag_LabMatch = 0 
+			'Cleaning the label from the second list
+			ccSecondLabel = Trim(ReplacingSymbol(cat_second.label,Sym))
+			
+			'# Cheking if the category exist in the main list
+			For each cat_main in MDM_Main.Fields[quest].categories
+				'Cleaning the label from the main list cat_main.label
+				ccMainLabel = Trim(ReplacingSymbol(cat_main.Label,Sym))
+			
+				'# Looking if the current categoriy from the second list is contained at the main list 
+				If (ccSecondLabel = ccMainLabel)  Then 
+
+					' If the Flag_LabMatch = 0 Then this  category from the second list didn't exist into the main list 
+					Flag_LabMatch = 1 
+				end if 			
+				
+			next
+			
+			
+			'Adding the new category into the Main MDD
+			If Flag_LabMatch = 0 Then
+				If prefix_CatName = 0 Then
+					vailableCatName = VailableCatName_Function(quest,prefix,postfix,CounterVarsOriginal)
+				Elseif prefix_CatName > 0 Then
+					vailableCatName = TempCatNameWithPrefix_Function(quest,prefix,postfix,prefix_CatName,PrefixNumberType)
+				End if 
+
+
+				
+				MDM_Main.Fields[quest].elements.add(MDM_Main.CreateElement(vailableCatName,cat_second.Label))
+				'Adding the category in order to keep track of the new category added
+				ListOfCategoriesWhichWereAdded = ListOfCategoriesWhichWereAdded + ","+vailableCatName
+				
+				CounterVarsOriginal = CounterVarsOriginal + 1
+				
+				MDM_Main.Save(NewMDD_Name)
+			End if 
+		'# End Cat_second FOR	
+		Next
+		
+	
+	'# End Cat_Main FOR	
+	ListOfCategoriesWhichWereAdded = ListOfCategoriesWhichWereAdded + ";"
+	Next
+End if 
+
+ListOfCategoriesWhichWereAdded = left(ListOfCategoriesWhichWereAdded,len(ListOfCategoriesWhichWereAdded)-1)
+
+MDM_Main.Save(NewMDD_Name)
+MDM_Main.Close()
+''debug.Log(ListOfCategoriesWhichWereAdded)
+
+
+'=======================Updating of the ""Second"" MDD '=======================
+'SecondMDDQues_List,SecondMDDCat_List
+MDM_Temp.Open(NewMDD2_Name)
+
+
+For each ques in Split(ListOfCategoriesWhichWereAdded,";")
+	If ques.Find(",") <> -1 Then
+		tempcat = split(ques,",")
+		For i = 1 to Ubound(tempcat)	
+			If MDM_Temp.Variables[tempcat[0]].Elements.Exist[tempcat[i]] = False Then
+				MDM_Temp.Fields[tempcat[0]].elements.add(MDM_Temp.CreateElement(tempcat[i],"DUMMYCAT"))
+			
+			End if 
+		Next
+	End if 		
+Next
+
+
+MDM_Temp.Save(NewMDD2_Name)
+MDM_Temp.Close()
+'======================='END OF Updating Second MDD=======================
+
+
+'============== END OF Updating  MDD =============================
+
+MDM_Main.open(NewMDD_Name)
+MDM_second.open(NewMDD2_Name)
+
+Dim CategoryToBeRemoved, dict
+
+set dict = CreateObject("Scripting.Dictionary")
+
+
+
+If len(List_Main)>1 Then
+	For each quest_main in Split(List_Main,",")
+		ReplaceList = ""
+		CategoryToBeRemoved = ""	
+		
+'		debug.Log(quest_main)
+		For each ele_main in MDM_Main.fields[Ctext(quest_main)].elements
+			ccMainLabel = Trim(ReplacingSymbol(ele_main.Label,Sym)) 
+			For each ele_second in MDM_second.Fields[Ctext(quest_main)].elements
+				ccSecondLabel = Trim(ReplacingSymbol(ele_second.label,Sym))
+				if	 (Trim(ccMainLabel) = Trim(ccSecondLabel)) and (Ctext(ele_main.fullname) <> Ctext(ele_second.fullname)) Then
+ 				
+					ReplaceList = ReplaceList + ele_second.fullname + "," + ele_main.Fullname + ";"
+					CategoryToBeRemoved = CategoryToBeRemoved + ele_second.FullName + ","
+'					
+				end if 
+				
+			next
+		next
+		CategoryToBeRemoved = left(CategoryToBeRemoved,len(CategoryToBeRemoved)-1)
+		ReplaceList = left(ReplaceList,len(ReplaceList)-1)
+		'Filling the dictionary with the question nasmes and list of the categories which should be replaced 
+		If len(ReplaceList) > 3 Then
+			dict.Add(quest_main,ReplaceList)
+			debug.Log(ReplaceList)
+			debug.Log(CategoryToBeRemoved)
+		End if 
+	Next ' Quest_main
+
+
+End if ' List_main >  1 
+dim kk
+
+
+
+MDM_Main.Close()
+MDM_Second.Close()
+
+
+
+
+'========================    Updating the CASE DATA for the "second" data ======================
+dim rs,ID_CurrentRespondent,flag_ansCount,flag_currentCode,answ,rep,DummyVar_Split,ModifyCatList
+set con = createObject("ADODB.connection")
+con.ConnectionString = "Provider=mrOleDB.Provider.2;Data Source=mrDataFileDsc;Location="+NewCaseData2_Name+";Initial Catalog="+NewMDD2_Name+";MR Init MDM Access=1;MR Init Category Names=1"
+con.Open()
+
+
+
+If len(List_Main)>1 Then
+	For each quest in Split(List_Main,",") 
+		ModifyCatList = ""
+		OriginalCatList = ""
+		flag_currentCode = 1
+	
+		con.Execute("exec xp_syncdb")
+		debug.Log(quest)
+		Debug.Log(dict.Item[quest])
+		
+		Set rs = con.Execute("select  "+ID_VarName+", "+quest+" from vdata ")	
+		
+		'Recoding the case data
+		do until rs.EOF
+			
+			'Taking the answer
+			OriginalCatList = rs.Fields[1].Value
+			
+			'Taking the ID
+			ID_CurrentRespondent = rs.Fields[0].Value
+			debug.Log("ID - " + Ctext(ID_CurrentRespondent))
+			debug.Log(Ctext(rs.Fields[1].Value))
+			'Replacing the categories
+			flag_ansCount = 0 
+			flag_currentCode = 1 
+			If OriginalCatList.Len() >= 3 Then	
+				debug.Log(OriginalCatList + " - The answers theat the respondent has into qeustion:" + quest)
+				
+				'Seting the count of the categoeis in the answer
+				for each answ in Split(OriginalCatList,",")
+					flag_ansCount = flag_ansCount + 1
+				next
+				
+				'Reaplacing the categoris and modefing the categoylist
+				For each answ in Split(OriginalCatList,",")
+				
+'					debug.Log(dict.Item[quest])
+'					debug.Log(answ)
+					For each rep in Split(dict.Item[quest],";")
+'						debug.Log(rep + " Rep")
+						DummyVar_Split = Split(rep,",")
+
+						If find(answ,DummyVar_Split[0]) <> -1 Then
+'							debug.Log("ANS -" + answ + " and Rep is Dummy0"  + DummyVar_Split[0] + " - Dummy 1" + DummyVar_Split[1])
+'							debug.Log("In")
+							answ = replace(answ,DummyVar_Split[0],DummyVar_Split[1])
+							exit for
+						End if 
+					next
+					'# Writing the new category list
+'					debug.Log(Ctext(flag_currentCode) + " - Flag counter")
+					If flag_currentCode < flag_ansCount Then
+						ModifyCatList = ModifyCatList + answ + ","
+						flag_currentCode = flag_currentCode + 1 
+					Elseif flag_currentCode = flag_ansCount Then
+						ModifyCatList = ModifyCatList + answ
+					End if 
+
+				
+				Next
+
+				
+			End if 
+			' Modefing the case data
+			if flag_ansCount > 0 Then 
+				debug.Log(ModifyCatList + " - The list afer modefing question: " + quest)
+				con.Execute("UPDATE vdata SET "+quest+" = "+ModifyCatList+" Where "+ID_VarName+" = "+Ctext(ID_CurrentRespondent)+"	")
+				debug.Log("UPDATE vdata SET "+quest+" = "+ModifyCatList+" Where "+ID_VarName+" = "+Ctext(ID_CurrentRespondent)+"	")
+			End if 
+						
+'			debug.Log(ModifyCatList)
+'			debug.Log(flag_ansCount)
+			ModifyCatList = ""
+			rs.MoveNext()
+		loop
+		
+	Next 
+End if 
+
+con.close()
+
+MDM_Main.Close()
+mdm_second.Close()
+'======================== END of updating the CASE DATA  ========================================
+'#########################################################################################################################################################
+'============================================ Removing categories from the second mdd which didn't exist in the master mdd '=================================
+Dim ListOfCategirisForRemove, catName_Second,catName_Main
+'CategorieNames_FlatQues
+
+MDM_Main.Open(NewMDD_Name)
+mdm_second.Open(NewMDD2_Name)
+
+
+If len(List_Main)>1 Then
+	For each ques in Split(List_Main,",")
+		debug.Log(ques)
+		catName_Main = CategorieNames_FlatQues(ques)
+		For each cat_second in mdm_second.Fields[ques].categories
+			catName_Second = cat_second.name 
+			
+			If Find(catName_Main,catName_Second) = -1 Then
+				mdm_second.Fields[ques].Elements.Remove(catName_Second)
+				debug.Log(catName_second)
+			End if
+			
+			
+		Next	
+	Next
+End if
+	
+	
+
+mdm_second.Save()
+
+
+MDM_Main.Close()
+mdm_second.Close()
+'=====================================================================================================================================
+
+
+set MDM_Main = null
+set mdm_second = null
+set MDM_Temp = NULL
+set con = null
+set dict = null
+Set FSO = Null
+
+
+'Functions
+
+Function ReplacingSymbol(Category,Symbol)
+
+Dim ele,cat,kk,sym
+
+For each sym in Split(Symbol,",")
+	Category = Replace(Category,sym,"")
+Next
+
+ReplacingSymbol = Category
+
+End Function 
+
+
+Sub RemovingCategories(Cat_List,Obj,ques)
+
+dim cat,ele,kk
+
+For each cat in Split(Cat_List,",")
+	Obj.Fields[ques].Elements.Remove(cat)
+Next
+
+
+End Sub
+
+'Returing the category name list (_1,_2,_3 ...) 
+Function CategorieNames_FlatQues(ques)
+dim cat_list,test_Val
+
+
+For each cat in MDM_Main.Fields[ctext(ques)].categories
+	cat_list = cat_list + cat.name + ","
+next
+
+cat_list = left(cat_list,len(cat_list)-1)
+
+CategorieNames_FlatQues = cat_list
+
+End Function
+
+
+'Return the prefix of the category
+Function Prefix_Function(Categorical_list)
+dim prefixVarCheck,prefixVar, position, FlagNumber,CheckCatNumber,FlagPosition
+
+
+	CheckCatNumber = Ubound(Split(Categorical_list,","))
+	If CheckCatNumber > 2 Then CheckCatNumber = CheckCatNumber - 1
+	CheckCatNumber = Clong(CheckCatNumber)
+''
+prefixVar = ""
+prefixVarCheck = ""
+FlagNumber = False
+'
+Categorical_list = Split(Categorical_list,",")
+
+	For i = 0 to len(Categorical_list[0]) - 1
+		letter = Ctext(mid(Categorical_list[0],i,1))
+		
+		For number = 0 to 9
+			if letter = ctext(number) Then
+				position = i 
+				FlagPosition = True
+				exit for
+			End if 
+		Next
+		if FlagPosition = True Then
+			exit for
+		end if 
+	Next
+	
+	If FlagPosition = True Then
+		prefixVar = ctext(left(Categorical_list[0],position))
+	Else
+		prefixVar = "NoPrefix"
+	End if 
+	
+	FlagNumber = False
+
+	
+	For i = 0 to len(Categorical_list[CheckCatNumber]) - 1
+		letter = Ctext(mid(Categorical_list[CheckCatNumber],i,1))
+		For number = 0 to 9
+			if letter = ctext(number) Then
+				position = i 
+				FlagPosition = True
+				exit for
+			End if 
+		Next
+		if FlagPosition = True Then
+			exit for
+		end if 
+	Next
+	
+	If FlagPosition = True Then
+		prefixVarCheck = ctext(left(Categorical_list[CheckCatNumber],position))
+	Else
+		prefixVarCheck = "NoPrefix"
+	End if 
+	
+
+	If prefixVar = prefixVarCheck Then
+		Prefix_Function = prefixVar
+	Else
+		Prefix_Function = "The prefix is not the same into the categories !!!"
+	End if 	
+	
+End Function
+'
+'
+Function ConsecutiveNumber_Function(cat,prefix)
+Dim consecutive_numbers, number, symbol, Flag_Number
+
+Flag_Number = True
+consecutive_numbers = 1
+cat = right(cat,len(cat)-len(prefix))
+
+	For i = 1 to len(cat)-1
+		If Flag_Number = True Then
+			symbol = Mid(cat,i,1)
+				For number = 0 to 9 
+					if ctext(symbol) = ctext(number) Then
+						consecutive_numbers = consecutive_numbers + 1
+						Flag_Number = True
+						
+						exit for
+					Else
+						Flag_Number = False
+					End if 
+				Next
+		Else
+			exit for
+		End if
+	Next
+
+ConsecutiveNumber_Function = consecutive_numbers
+
+End Function
+
+
+'Da se dobavi proverka dali izobshto imame postfix
+Function PostFix_Function(Categorical_list,prefix)
+Dim CheckCatNumber,postfixVar,postfixVarCheck,lenOfTheCategoryNumberVar,lenOfTheCategoryNumberVarCheck
+
+
+	CheckCatNumber = Ubound(Split(Categorical_list,","))
+	If CheckCatNumber > 2 Then CheckCatNumber = CheckCatNumber - 1
+	CheckCatNumber = Clong(CheckCatNumber)
+
+
+	Categorical_list = split(Categorical_list,",")
+	
+	lenOfTheCategoryNumberVar = Clong(ConsecutiveNumber_Function(Categorical_list[0],prefix))
+	lenOfTheCategoryNumberVarCheck = Clong(ConsecutiveNumber_Function(Categorical_list[CheckCatNumber],prefix))
+	
+	If Len(Categorical_list[0]) > lenOfTheCategoryNumberVar + len(prefix) Then
+		postfixVar = Right(Categorical_list[0],len(Categorical_list[0])-((len(prefix)+lenOfTheCategoryNumberVar)))
+		postfixVarCheck = Right(Categorical_list[CheckCatNumber],len(Categorical_list[CheckCatNumber])-((len(prefix)+lenOfTheCategoryNumberVarCheck)))
+		
+		If postfixVar  = postfixVarCheck Then
+			PostFix_Function = postfixVar
+		Else
+			PostFix_Function = "The postfix check was not passed"
+		End if 		
+	Else
+		PostFix_Function = "There is no postfix"	
+	End if 
+	
+End Function
+
+
+Function VailableCatName_Function(ques,prefix,postfix,countOfCat)
+
+Dim TempCatName,MDM
+
+Set MDM = CreateObject("MDM.Document")
+	
+	MDM.OpenClone(NewMDD_Name)
+
+Do
+	TempCatName = Ctext(prefix) + Ctext(CountOfCat) + Ctext(postFix)
+ 	countOfCat = countOfCat + 1
+' 	debug.Log(TempCatName)
+
+Loop Until  MDM.Variables[ques].Elements.Exist[TempCatName] = False
+
+
+VailableCatName_Function = TempCatName
+
+MDM.Close()
+set MDM = null
+
+End Function 
+
+
+Function TempCatNameWithPrefix_Function(ques,prefix,postfix,prefix_CatName,PrefixNumberType)
+Dim firstNumberFromPrefix,TempCatName,TempNumber,Flag, lenOfThePrefixNumber, MDM, TempNumberHolder
+
+  
+	If  left(ctext(prefix_CatName),1) = "_" or left(ctext(prefix_CatName),1) = "r" Then
+		debug.Log("The prefix should be number and not lead with a ""r""/""_"" ")
+		Exit
+	ElseIf prefix_CatName = 0 Then
+		Debug.Log("The prefix number is 0, and it's not allowed")
+		Exit
+	End if 
+
+	
+	TempNumber = 1
+	
+	Set MDM = CreateObject("MDM.Document")
+	
+	MDM.OpenClone(NewMDD_Name)
+	
+	' Body of the function
+	Select Case PrefixNumberType
+		Case 1
+		
+			Do		
+				TempCatName = Trim(Ctext(prefix) + Ctext(Prefix_catName) + Ctext(TempNumber) + Ctext(Postfix))
+				TempNumber = TempNumber + 1
+
+			Loop Until  MDM.Variables[ques].Elements.Exist[TempCatName] = False
+			
+			TempCatNameWithPrefix_Function = TempCatName
+		Case 2
+			' It will be used to compare if the new category exceeds the initial prefix number
+			firstNumberFromPrefix = left(Ctext(prefix_CatName),1)
+			'Let's say the prefix is 4000 and the new category is 44000 it will still match the above check, but it will be different and this is the reason why we are comparing the len
+			lenOfThePrefixNumber = len(Ctext(prefix_CatName))
+			
+			Do 
+			'sum number of the prefix and the category
+			TempNumberHolder = Clong(TempNumber) + Clong(Prefix_catName)
+			
+			TempCatName = Ctext(prefix) + Ctext(TempNumberHolder) + Ctext(PostFix)
+			TempNumber = TempNumber + 1
+			Loop Until  MDM_Main.Variables[ques].Elements.Exist[TempCatName] = False
+			
+			'Check for the leading number of the prefix
+			if lenOfThePrefixNumber <> len(ctext(TempNumberHolder)) Then
+				debug.Log("Alert !!! - Based on the summing of the category name and the prefix, a whole new number was applied. For example for 4001 -> 44001. Category for which this occurred: "+Ctext(TempCatName)+" ")
+			Elseif firstNumberFromPrefix <> left(ctext(TempNumberHolder),1) Then
+				debug.Log("Alert !!! - The leading number of your prefix is higher then the initial one. For category: "+ctext(TempCatName)+", the requested prefix was: "+ctext(Prefix_catName)+" and the sequential number of the category is "+ctext(TempNumber)+" ")
+			End if 
+			
+			TempCatNameWithPrefix_Function = TempCatName
+			
+			
+			
+		Case 3 ' Mitio's Case
+			Do
+				TempCatName = Trim(	Ctext(prefix)+Ctext(Prefix_catName)+"_"+ctext(TempNumber)+ctext(PostFix))
+				TempNumber = TempNumber + 1
+			Loop Until  MDM.Variables[ques].Elements.Exist[TempCatName] = False
+			
+			TempCatNameWithPrefix_Function = TempCatName
+	End select 
+
+	'================================ End of the Body ================================================
+MDM.Close()
+Set MDM = Null
+
+End function 
+
+
+
+Sub Cleaning_EmptyAnswers_Sub(ques,Metadata,CaseData)
+
+Dim InnQues,rs,newvar
+
+InnQues = Ctext(ques)
+
+set con = CreateObject("ADODB.Connection")
+con.ConnectionString = "Provider=mrOleDB.Provider.2;Data Source=mrDataFileDsc;Location="+CaseData+";Initial Catalog="+Metadata+";MR Init MDM Access=1"
+
+con.Open()
+
+con.execute("exec xp_syncdb")
+
+set rs = con.Execute("Select "+InnQues+" from vdata where " + InnQues+ ".AnswerCount() = 0 and "+InnQues+" is not null")
+
+If rs.EOF = False Then
+	con.Execute("UPDATE vdata SET "+InnQues+" = null where "+InnQues+".AnswerCount() = 0 and "+InnQues+" is not null")
+End if 
+
+con.close()
+set con = Null
+set rs = Null
+
+
+End Sub
+
+
+
+
